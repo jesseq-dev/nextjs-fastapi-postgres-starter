@@ -30,6 +30,9 @@ const Thread = ({ threadId, userId }: { threadId: number; userId: number }) => {
     try {
       const data = await fetch(`${API_URL}/thread/messages`, {
         method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           content: input,
           sender_id: userId,

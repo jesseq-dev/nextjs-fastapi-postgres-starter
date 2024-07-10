@@ -52,7 +52,6 @@ export default function Home() {
       <div className="flex flex-row w-full min-h-screen">
         <div className="flex flex-col bg-gray-900 p-4" style={{ width: 350 }}>
           <h1 className="font-bold text-white mb-4">Chat History</h1>
-          <hr />
           {threads.length !== 0 &&
             threads.map((thread) => {
               return (
