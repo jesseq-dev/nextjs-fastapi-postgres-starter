@@ -58,7 +58,7 @@ export default function Home() {
                 <div
                   key={thread.id}
                   onClick={() => setSelectedThread(thread)}
-                  className={`flex justify-center items-center shadow-md rounded px-8 pt-6 pb-8 cursor-pointer text-white
+                  className={`flex justify-center items-center shadow-md rounded px-8 py-2 cursor-pointer text-white
                     ${
                       selectedThread?.id === thread.id
                         ? "bg-blue-200 hover:bg-blue-100"
