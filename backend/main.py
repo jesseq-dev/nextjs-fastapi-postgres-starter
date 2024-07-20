@@ -1,4 +1,6 @@
-from fastapi import FastAPI, HTTPException, Depends
+import asyncio
+import json
+from fastapi import FastAPI, HTTPException, Depends, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -8,11 +10,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from db_engine import engine
 from models import User, Thread, Message
 from randomdata import generate_random_sentence
+import redis.asyncio as redis
 
 seed_user_if_needed()
 seed_threads_if_needed()
 
 app = FastAPI()
+
+# Use redis.asyncio for async Redis operations
+redis_client = redis.from_url("redis://localhost")
 
 app.add_middleware(
     CORSMiddleware,
@@ -92,7 +98,7 @@ async def get_thread(thread_id: int):
                 raise HTTPException(status_code=404, detail="Thread not found")
             return ThreadRead(id=thread.id, user_id=thread.user_id, created_at=thread.created_at, updated_at=thread.updated_at)
 
-@app.post("/thread/messages/", response_model=list[MessageRead])
+@app.post("/thread/messages/", response_model=MessageRead)
 async def create_message(message_create: MessageCreate):
     async with AsyncSession(engine) as session:
         async with session.begin():
@@ -116,20 +122,26 @@ async def create_message(message_create: MessageCreate):
             await session.flush()
             await session.refresh(bot_message)
             
-            print("ssssss")
-            return [MessageRead(
+            # Extract data to be published
+            bot_message_data = {
+                "id": bot_message.id,
+                "thread_id": bot_message.thread_id,
+                "content": bot_message.content,
+                "sender_id": bot_message.sender_id,
+                "created_at": bot_message.created_at.isoformat()
+            }
+            
+            # Create a background task for publishing to Redis
+            asyncio.create_task(publish_to_redis(message_create.thread_id, bot_message_data))
+
+            
+            return MessageRead(
                 id=new_message.id,
                 thread_id=new_message.thread_id,
                 content=new_message.content,
                 sender_id=new_message.sender_id,
                 created_at=new_message.created_at
-            ), MessageRead(
-                id=bot_message.id,
-                thread_id=bot_message.thread_id,
-                content=bot_message.content,
-                sender_id=bot_message.sender_id,
-                created_at=bot_message.created_at
-            )]
+            )
         
 @app.get("/threads/{thread_id}/messages", response_model=list[MessageRead])
 async def get_messages(thread_id: int):
@@ -144,4 +156,25 @@ async def get_messages(thread_id: int):
                 sender_id=msg.sender_id,
                 created_at=msg.created_at
             ) for msg in messages]
-        
+
+async def publish_to_redis(thread_id: int, bot_message_data: dict):
+    await asyncio.sleep(3)  # Wait for 5 seconds
+    await redis_client.publish(
+        f"thread:{thread_id}",
+        json.dumps(bot_message_data)
+    )
+            
+@app.websocket("/ws/{thread_id}")
+async def websocket_endpoint(websocket: WebSocket, thread_id: str):
+    await websocket.accept()
+    pubsub = redis_client.pubsub()
+    print(f"subscribe thread:{thread_id}")
+    await pubsub.subscribe(f"thread:{thread_id}")
+    try:
+        async for message in pubsub.listen():
+            if message['type'] == 'message':
+                print(f"listen thread:{thread_id} message:{message['data']}")
+                await websocket.send_text(message['data'])
+    except WebSocketDisconnect:
+        print(f"unsubscribe thread:{thread_id}")
+        await pubsub.unsubscribe(f"thread:{thread_id}")

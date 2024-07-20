@@ -2,11 +2,22 @@
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { API_URL } from "../constants";
+import useWebSocket from "../hooks/useWebSocket";
+import LoadingSpinner from "./loading";
 
 const Thread = ({ threadId, userId }: { threadId: number; userId: number }) => {
   const [messages, setMessages] = useState<Array<Message>>([]);
   const [input, setInput] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
+  const [loading, setLoading] = useState(false);
+
+  const scrollToBottom = () => {
+    setTimeout(() => {
+      if (containerRef.current) {
+        containerRef.current.scrollTop = containerRef.current.scrollHeight;
+      }
+    }, 500);
+  };
 
   const fetchMessages = async () => {
     try {
@@ -15,6 +26,7 @@ const Thread = ({ threadId, userId }: { threadId: number; userId: number }) => {
       ).then((res) => res.json());
 
       setMessages(messages);
+      scrollToBottom();
     } catch (err) {
       console.log(err);
     }
@@ -39,18 +51,25 @@ const Thread = ({ threadId, userId }: { threadId: number; userId: number }) => {
           thread_id: threadId,
         }),
       });
-      const [message, botMessage] = await data.json();
-      setMessages((prevValue) => [...prevValue, message, botMessage]);
+      const message = await data.json();
+      setMessages((prevValue) => [...prevValue, message]);
+      setLoading(true);
       setTimeout(() => {
-        if (containerRef.current) {
-          containerRef.current.scrollTop = containerRef.current.scrollHeight;
-        }
+        scrollToBottom();
       }, 500);
       setInput("");
     } catch (err) {
       console.log(err);
     }
   };
+
+  useWebSocket(API_URL, threadId, (message) => {
+    setLoading(false);
+    setMessages((prevValue) => [...prevValue, message]);
+    setTimeout(() => {
+      scrollToBottom();
+    }, 500);
+  });
 
   return (
     <div className="flex flex-col h-full justify-between">
@@ -78,6 +97,13 @@ const Thread = ({ threadId, userId }: { threadId: number; userId: number }) => {
               </div>
             </div>
           ))}
+          {loading && (
+            <div className="flex justify-start mb-2 typing-animation">
+              <div className="max-w-xs rounded-lg px-4 py-2 bg-gray-200 text-gray-800">
+                <div className="animate-spin rounded-full h-8 w-8 border-t-4 border-blue-500" />
+              </div>
+            </div>
+          )}
         </div>
       </div>
       <form onSubmit={sendMessage}>
@@ -89,6 +115,7 @@ const Thread = ({ threadId, userId }: { threadId: number; userId: number }) => {
             placeholder="Message with Bot"
             required
             value={input}
+            disabled={loading}
             onChange={(e) => setInput(e.target.value)}
           />
         </div>
